@@ -18,8 +18,8 @@ class Config:
     SUPABASE_KEY = os.getenv("SUPABASE_KEY")
     
     # Application Flow
-    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    BACKEND_PORT = int(os.getenv("BACKEND_PORT", 8000))
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:9010")
+    BACKEND_PORT = int(os.getenv("BACKEND_PORT", 9020))
     
     # Security
     # In production, this should be a comma-separated list of origins

@@ -1,14 +1,27 @@
+version: '3.8'
+
 services:
   backend:
-    build: .
-    container_name: vertical-pulse-backend
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: vertical_pulse_backend
+    restart: always # Automatically restart on crash or server reboot
     ports:
-      - "8060:8060"
+      - "9020:9020"
     env_file:
-      - .env
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - .env # Use the `.env` file to inject secrets securely
+    # If you prefer putting environment variables directly, you can uncomment below:
+    # environment:
+    #   - GEMINI_API_KEY=${GEMINI_API_KEY}
+    #   - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    #   - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
+    #   - SUPABASE_URL=${SUPABASE_URL}
+    #   - SUPABASE_KEY=${SUPABASE_KEY}
+    #   - ALLOWED_ORIGINS=*
+    networks:
+      - pulse_network
+
+networks:
+  pulse_network:
+    driver: bridge
