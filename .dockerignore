@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Docker/System
+.dockerignore
+Dockerfile
+docker-compose.yml
+.DS_Store
+
+# Brain/Artifacts
+.gemini/
+.agent/
+task.md
+codebase_explanation.md
+implementation_plan.md
+walkthrough.md
