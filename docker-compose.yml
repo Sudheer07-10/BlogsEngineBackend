@@ -3,7 +3,7 @@ services:
     build: .
     container_name: vertical-pulse-backend
     ports:
-      - "8060:8000"
+      - "8060:8060"
     env_file:
       - .env
     restart: unless-stopped
