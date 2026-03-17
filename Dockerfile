@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the internal port
-EXPOSE 8000
+EXPOSE 8060
 
 # Start the application using uvicorn
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
