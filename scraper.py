@@ -6,7 +6,7 @@ import re
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 # Definition of active verticals for Vertical Pulse
 VERTICAL_KEYWORDS = {
@@ -152,8 +152,6 @@ def find_trending_articles(query_suffix: str = "", limit: int = 5) -> list[dict]
     Fetch trending articles specifically for the defined verticals: 
     Education, Health care, AI, and Jobs.
     """
-    from duckduckgo_search import DDGS
-    
     verticals = ["education", "health care", "ai", "jobs"]
     all_articles = []
     
@@ -256,7 +254,6 @@ def find_related_articles(query_or_url: str, limit: int = 5, vertical: str | Non
             pass # Fall back to searching the raw URL string
 
     try:
-        from duckduckgo_search import DDGS
         results = DDGS().news(keywords=search_term, max_results=20, timelimit="w")
         
         options = []
