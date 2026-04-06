@@ -6,14 +6,15 @@ import re
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
-from duckduckgo_search import DDGS
+from ddgs import DDGS
+from summarizer import STOP_WORDS
 
 # Definition of active verticals for Vertical Pulse
 VERTICAL_KEYWORDS = {
-    "education": ["school", "university", "learning", "edtech", "courses", "student", "teacher", "education", "degree", "curriculum"],
-    "health care": ["medical", "wellness", "hospital", "doctors", "medtech", "health", "healthcare", "patient", "clinical", "surgery", "medicine", "pharmacy"],
-    "ai": ["artificial intelligence", "machine learning", "llm", "automation", "robotics", "neural network", "deep learning", "generative ai", "openai", "claude", "gemini", "nvidia", "gpu"],
-    "jobs": ["career", "hiring", "workforce", "recruitment", "employment", "job", "salary", "interview", "resume", "hr", "talent", "layoff"]
+    "education": ["school", "university", "learning", "edtech", "courses", "student", "teacher", "education", "degree", "curriculum", "study", "academic"],
+    "health care": ["medical", "wellness", "hospital", "doctors", "medtech", "health", "healthcare", "patient", "clinical", "surgery", "medicine", "pharmacy", "clinic", "diagnosis"],
+    "ai": ["ai", "artificial intelligence", "machine learning", "llm", "automation", "robotics", "neural network", "deep learning", "generative ai", "openai", "claude", "gemini", "nvidia", "gpu", "pytorch", "tensorflow"],
+    "jobs": ["career", "hiring", "workforce", "recruitment", "employment", "job", "salary", "interview", "resume", "hr", "talent", "layoff", "work", "remote"]
 }
 
 def is_content_relevant(text: str) -> bool:
@@ -147,6 +148,50 @@ def _extract_highlights(text: str) -> list[str]:
 import random
 import time
 
+class SafeDDGS:
+    """Wrapper for DDGS to handle rate limits with retries and fallbacks."""
+    def __init__(self, max_retries=2, delay=1):
+        self.max_retries = max_retries
+        self.delay = delay
+
+    def news(self, query, max_results=10, timelimit=None):
+        """Try news search, fallback to text search if news fails (highly common)."""
+        results = []
+        for i in range(self.max_retries):
+            try:
+                ddgs = DDGS()
+                results = list(ddgs.news(query, max_results=max_results, timelimit=timelimit))
+                if results: return results
+            except Exception as e:
+                if "403" in str(e) or "Ratelimit" in str(e):
+                    time.sleep(self.delay)
+                    continue
+                break
+        
+        # Fallback to standard search if news fails or is empty
+        print(f"[Scraper] News search failed or empty for '{query}'. Falling back to standard text search...")
+        return self.text(query, max_results=max_results)
+
+    def text(self, query, max_results=10):
+        for i in range(self.max_retries):
+            try:
+                ddgs = DDGS()
+                # Regular text search is more robust than the news-specific API
+                res = list(ddgs.text(query, max_results=max_results))
+                # Map 'href' and 'body' to match the 'url' and 'snippet/body' news expects
+                return [{
+                    "title": r.get("title", "No Title"),
+                    "url": r.get("href") or r.get("url"),
+                    "source": urlparse(r.get("href") or r.get("url", "")).netloc,
+                    "body": r.get("body", "")
+                } for r in res]
+            except Exception as e:
+                if "403" in str(e) or "Ratelimit" in str(e):
+                    time.sleep(self.delay)
+                    continue
+                break
+        return []
+
 def find_trending_articles(query_suffix: str = "", limit: int = 5) -> list[dict]:
     """
     Fetch trending articles specifically for the defined verticals: 
@@ -157,81 +202,55 @@ def find_trending_articles(query_suffix: str = "", limit: int = 5) -> list[dict]
     
     print(f"[Scraper] Scouting trending news for verticals: {verticals}")
     
-    try:
-        ddgs = DDGS()
-        for vertical in verticals:
-            # Create a more targeted query for each vertical
-            search_query = f"{vertical} news {query_suffix}".strip()
-            print(f"[Scraper] Searching news for: {search_query}")
-            
-            try:
-                # Get top 2 results per vertical to ensure variety
-                results = list(ddgs.news(search_query, max_results=3, timelimit="d"))
-                
-                for r in results:
-                    title = r.get("title", "")
-                    # Double check relevance using our existing logic
-                    if is_content_relevant(title) or is_content_relevant(r.get("body", "")):
-                        all_articles.append({
-                            "title": title,
-                            "url": r.get("url", ""),
-                            "source": r.get("source", "News"),
-                            "vertical": vertical.title(),
-                            "snippet": r.get("body", "")
-                        })
-                
-                # Tiny sleep to be polite to the search engine
-                time.sleep(0.5)
-                
-            except Exception as e:
-                print(f"[Scraper] Failed trending search for {vertical}: {e}")
-                continue
-                
-        # Shuffle results so verticals are mixed, then cap at limit
-        random.shuffle(all_articles)
-        return all_articles[:limit]
+    safe_ddgs = SafeDDGS()
+    for vertical in verticals:
+        search_query = f"{vertical} news {query_suffix}".strip()
+        print(f"[Scraper] Searching for: {search_query}")
         
-    except Exception as e:
-        print(f"[Scraper] Trending search global error: {e}")
-        return []
+        results = safe_ddgs.news(search_query, max_results=3)
+        for r in results:
+            title = r.get("title", "")
+            if is_content_relevant(title) or is_content_relevant(r.get("body", "")):
+                all_articles.append({
+                    "title": title,
+                    "url": r.get("url", ""),
+                    "source": r.get("source", "News Source"),
+                    "vertical": vertical.title(),
+                    "snippet": r.get("body", "")
+                })
+        time.sleep(0.5)
+                
+    random.shuffle(all_articles)
+    return all_articles[:limit]
 
 def search_web_for_url(query: str, vertical: str | None = None) -> str | None:
-    """Use DuckDuckGo to find a trending web article URL. Randomizes from top 5 to prevent repetition."""
-    
-    # 0. Prepend vertical to query if provided
+    """Use DuckDuckGo to find a trending web article URL."""
+    original_query = query
     if vertical:
         query = f"{vertical} {query}".strip()
     
-    # 1. Try DuckDuckGo News first (for trending, relative content)
-    try:
-        news_results = list(DDGS().news(query, max_results=5))
-        if news_results and len(news_results) > 0:
-            return random.choice(news_results).get("url")
-    except Exception as exc:
-        print(f"DuckDuckGo news search failed for '{query}': {exc}")
-
-    # 2. Try DuckDuckGo Standard Text Search (general web)
-    try:
-        results = list(DDGS().text(query, max_results=5))
-        if results and len(results) > 0:
-            return random.choice(results).get("href")
-    except Exception as exc:
-        print(f"DuckDuckGo search failed for '{query}': {exc}")
+    safe_ddgs = SafeDDGS()
     
-    # 3. Fallback to standard Wikipedia OpenSearch API
+    # news() already falls back to text()
+    results = safe_ddgs.news(query, max_results=3)
+    if results:
+        return random.choice(results).get("url")
+
+    # Final Wikipedia Fallback
     try:
-        search_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={requests.utils.quote(query)}&limit=1&format=json"
+        search_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={requests.utils.quote(original_query)}&limit=1&format=json"
         resp = requests.get(search_url, headers=HEADERS, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-    except Exception as exc:
-        print(f"Wikipedia fallback search failed for '{query}': {exc}")
+        if data and len(data) > 3 and data[3]:
+            return data[3][0]
+    except:
+        pass
 
     return None
 
-
 def find_related_articles(query_or_url: str, limit: int = 5, vertical: str | None = None) -> list[dict]:
-    """Find related articles from diverse publishers to present as options."""
+    """Find related articles from diverse publishers, with multiple fallbacks."""
     print(f"[Scraper] Finding related coverage for: {query_or_url} (Vertical: {vertical})")
     
     search_term = query_or_url
@@ -241,7 +260,6 @@ def find_related_articles(query_or_url: str, limit: int = 5, vertical: str | Non
     
     if query_or_url.startswith("http://") or query_or_url.startswith("https://"):
         try:
-            print("[Scraper] Query is a URL. Fetching original title...")
             metadata = scrape_url(query_or_url)
             search_term = metadata.get("title", "")
             original_option = {
@@ -249,59 +267,81 @@ def find_related_articles(query_or_url: str, limit: int = 5, vertical: str | Non
                 "url": query_or_url,
                 "source": metadata.get("domain", "Original Source")
             }
+        except:
+            pass
+
+    safe_ddgs = SafeDDGS()
+    results = safe_ddgs.news(search_term, max_results=15)
+    
+    # If DDG fails completely, try a very simple Wikipedia search as fallback
+    if not results:
+        print("[Scraper] DDG returned zero results. Trying Wikipedia fallback...")
+        try:
+            wiki_search = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={requests.utils.quote(query_or_url)}&limit=10&format=json"
+            resp = requests.get(wiki_search, headers=HEADERS, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                # data[1] = titles, data[3] = urls
+                if len(data) > 3 and data[1]:
+                    results = []
+                    for t, u in zip(data[1], data[3]):
+                        results.append({
+                            "title": t,
+                            "url": u,
+                            "source": "Wikipedia",
+                            "body": f"Wikipedia article about {t}"
+                        })
         except Exception as e:
-            print(f"[Scraper] Failed to fetch original URL title: {str(e)}")
-            pass # Fall back to searching the raw URL string
+            print(f"[Scraper] Wikipedia discovery fallback failed: {e}")
 
-    try:
-        results = DDGS().news(keywords=search_term, max_results=20, timelimit="w")
-        
-        options = []
-        # Normalizing source names to catch 'www.nextgov.com' vs 'NEXTGOV'
-        def normalize_source(s):
-            return re.sub(r'^(www\.)?|\.com$|\.org$|\.net$', '', s.lower()).strip()
+    options = []
+    def normalize_source(s):
+        return re.sub(r'^(www\.)?|\.com$|\.org$|\.net$', '', s.lower()).strip()
 
-        seen_titles = set()
-        seen_urls = set()
-        seen_sources = set()
+    seen_titles = set()
+    seen_urls = set()
+    seen_sources = set()
 
-        # If original_option is relevant, add it first
-        if original_option and is_content_relevant(original_option["title"]):
+    # If original_option is relevant, add it first
+    if original_option:
+        if is_content_relevant(original_option["title"]):
             options.append(original_option)
             seen_titles.add(original_option["title"].lower().strip())
             seen_urls.add(original_option["url"].lower().split('?')[0])
             seen_sources.add(normalize_source(original_option["source"]))
-        
-        if results:
-            for r in results:
-                if len(options) >= limit:
-                    break
-                
-                title = r.get("title", "No Title").strip()
-                # Secondary filtering: Check if title contains vertical keywords
-                if not is_content_relevant(title):
-                    continue
 
-                norm_title = title.lower()
-                url = r.get("url", "").split('?')[0].lower()
-                source = r.get("source", "Unknown")
-                norm_source = normalize_source(source)
-                
-                if norm_title not in seen_titles and url not in seen_urls and norm_source not in seen_sources:
+    if results:
+        for r in results:
+            if len(options) >= limit:
+                break
+            
+            title = r.get("title", "No Title").strip()
+            if not is_content_relevant(title):
+                continue
+
+            norm_title = title.lower()
+            url = r.get("url", "").split('?')[0].lower() if r.get("url") else ""
+            source = r.get("source", "Unknown")
+            norm_source = normalize_source(source)
+            
+            # Relax deduplication for Wikipedia and search results
+            is_new_source = norm_source not in seen_sources
+            can_duplicate_source = len(options) < 5 and (norm_source == "wikipedia" or norm_source == "duckduckgo")
+
+            if url and norm_title not in seen_titles and url not in seen_urls:
+                if is_new_source or can_duplicate_source:
                     options.append({
                         "title": title,
                         "url": r.get("url", ""),
                         "source": source,
-                        "snippet": r.get("body", "") # Store the search snippet as fallback
+                        "snippet": r.get("body", "") or r.get("snippet", "")
                     })
                     seen_titles.add(norm_title)
                     seen_urls.add(url)
                     seen_sources.add(norm_source)
                     
-        return options
-    except Exception as e:
-        print(f"[Scraper] News Search failed: {str(e)}")
-        return [original_option] if original_option else []
+    return options
+
 
 
 def scrape_url(url: str) -> dict:
@@ -398,6 +438,10 @@ def scrape_url(url: str) -> dict:
     content_images = _extract_body_images(main_content, url)
     callout_stats = _extract_highlights(body_text)
 
+    # Fallback for main image_url if og:image is missing
+    if not image_url and content_images:
+        image_url = content_images[0]
+
     # --- Hashtags ---
     hashtags: list[str] = []
     hashtags.extend(_extract_keywords_as_hashtags(soup))
@@ -412,10 +456,25 @@ def scrape_url(url: str) -> dict:
             seen.add(h)
             unique_hashtags.append(h)
 
-    # If no hashtags found, generate from title words
-    if not unique_hashtags:
-        title_words = re.findall(r"\b[a-zA-Z]{4,}\b", title.lower())
-        unique_hashtags = list(dict.fromkeys(title_words))[:5]
+    # If no hashtags found, or fewer than 5, generate from title and body words
+    if len(unique_hashtags) < 5:
+        # Extract meaningful nouns/keywords from title (4+ chars)
+        title_keywords = re.findall(r"\b[a-zA-Z]{4,}\b", title.lower())
+        
+        # Also extract vertical-relevant keywords from the body (first 1000 chars)
+        body_sample = body_text[:1000].lower()
+        vertical_leads = []
+        for vertical, keywords in VERTICAL_KEYWORDS.items():
+            if any(k in body_sample for k in keywords):
+                vertical_leads.append(vertical.replace(" ", ""))
+
+        extra_candidates = title_keywords + vertical_leads
+        for h in extra_candidates:
+            if h not in seen and h not in STOP_WORDS: # Assuming STOP_WORDS is accessible or I'll just use common ones
+                seen.add(h)
+                unique_hashtags.append(h)
+                if len(unique_hashtags) >= 10:
+                    break
 
     domain = urlparse(url).netloc
 
@@ -425,7 +484,7 @@ def scrape_url(url: str) -> dict:
         "title": title,
         "description": description,
         "body_text": body_text,
-        "hashtags": unique_hashtags[:10],  # cap at 10
+        "hashtags": unique_hashtags[:12],  # slightly higher cap
         "image_url": image_url,
         "content_images": content_images,
         "callout_stats": callout_stats,

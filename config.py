@@ -10,8 +10,16 @@ class Config:
     
     # API Configurations
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-    ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
+    
+    # X (Twitter) API Keys
+    X_API_KEY = os.getenv("X_API_KEY")
+    X_API_SECRET = os.getenv("X_API_SECRET")
+    X_ACCESS_TOKEN = os.getenv("X_ACCESS_TOKEN")
+    X_ACCESS_SECRET = os.getenv("X_ACCESS_SECRET")
+    
+    # LinkedIn API Keys
+    LINKEDIN_ACCESS_TOKEN = os.getenv("LINKEDIN_ACCESS_TOKEN")
+    LINKEDIN_PERSON_ID = os.getenv("LINKEDIN_PERSON_ID")
     
     # Supabase
     SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -24,6 +32,16 @@ class Config:
     # Security
     # In production, this should be a comma-separated list of origins
     ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    
+    # Telegram Bot
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    BASE_URL = os.getenv("BASE_URL") # Required for Webhooks (e.g. https://api.yourdomain.com)
+
+    @property
+    def TELEGRAM_WEBHOOK_URL(self):
+        if not self.BASE_URL:
+            return None
+        return f"{self.BASE_URL.rstrip('/')}/api/telegram/webhook"
 
     @classmethod
     def validate(cls):
@@ -31,8 +49,6 @@ class Config:
         missing = []
         if not cls.GEMINI_API_KEY:
             missing.append("GEMINI_API_KEY")
-        if not cls.TELEGRAM_BOT_TOKEN:
-            missing.append("TELEGRAM_BOT_TOKEN")
         if not cls.SUPABASE_URL:
             missing.append("SUPABASE_URL")
         if not cls.SUPABASE_KEY:
