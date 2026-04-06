@@ -1,30 +1,40 @@
-# Use official lightweight Python image
+# Base image with Python 3.11 slim variant
 FROM python:3.11-slim
 
-# Set environment variables
+# Prevent Python from writing .pyc files & buffer output
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8060
+
+# Create a non-root system user for security
+RUN adduser --disabled-password --gecos "" appuser
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies required for lxml and curl-cffi
+# Install system dependencies required by libraries like lxml or curl_cffi
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    libssl-dev \
-    libffi-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install dependencies
+# Copy requirements file first to utilize Docker layer caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application source code into the container
 COPY . .
 
-# Expose the internal port
-EXPOSE 8060
+# Change ownership of the app directory to our non-root user
+RUN chown -R appuser:appuser /app
 
-# Start the application using uvicorn
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port $PORT"]
+# Switch to the non-root user
+USER appuser
+
+# Expose the port the app runs on
+EXPOSE 9020
+
+# Start the FastAPI application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9020"]

@@ -1,29 +1,37 @@
-# Git
-.git
+# Git files
+.git/
 .gitignore
 
-# Python
+# Python compilation files
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+
+# PyBuilder
+target/
+.pybuilder/
+
+# Environments
 .env
-.venv
+.venv/
+env/
 venv/
 ENV/
-build/
-dist/
-*.egg-info/
+env.bak/
+venv.bak/
 
-# Docker/System
-.dockerignore
+# Environment configurations
+*.env
+
+# IDE and Editor configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker files (Optional, sometimes omitted but good practice)
 Dockerfile
+.dockerignore
 docker-compose.yml
-.DS_Store
-
-# Brain/Artifacts
-.gemini/
-.agent/
-task.md
-codebase_explanation.md
-implementation_plan.md
-walkthrough.md
