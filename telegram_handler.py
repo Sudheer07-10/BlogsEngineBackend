@@ -121,7 +121,7 @@ class TelegramHandler:
                 "image_url": scraped.get("image_url"),
                 "content_images": scraped.get("content_images", []),
                 "description": scraped.get("description", ""),
-                "body_text": scraped.get("body_text", ""), # Keep for on-demand summarizing
+                "body_text": scraped.get("body_text", ""),
                 "meta_title": title,
                 "slug": f"bot-{url.split('/')[-1][:20]}",
                 "keywords": "news, telegram"
@@ -135,14 +135,11 @@ class TelegramHandler:
             await status_msg.edit_text(f"❌ *Scraping Error*: {str(e)}\n\n_Make sure the link is a direct blog post._", parse_mode="Markdown")
 
     async def _send_preview(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Displays content preview exactly like the requested screenshot."""
+        """Displays content preview."""
         content = context.user_data.get('last_content')
         if not content: return
 
-        platform = context.user_data.get('platform', 'cp')
-        platform_name = "Janmasethu" if platform == "sakhi" else ("Course Platform" if platform == "cp" else "Jobs")
-
-        # Formatting to match the screenshot exactly (escaping sensitive Markdown)
+        # Formatting
         title = content['title'].replace("*", "\\*").replace("_", "\\_").replace("[", "\\[")
         source = content['domain'].replace("*", "\\*").replace("_", "\\_")
         summary = content['summary'].replace("*", "\\*").replace("_", "\\_").replace("[", "\\[")
@@ -153,7 +150,7 @@ class TelegramHandler:
             f"*Source*: {source}\n\n"
             f"*GenZ Summary*:\n{summary}\n\n"
             f"*Hashtags*: {' '.join(hashtags)}\n\n"
-            f"Ready to publish this to your website and social platforms?"
+            f"Ready to publish this to your website?"
         )
 
         keyboard = [
@@ -165,8 +162,9 @@ class TelegramHandler:
                 InlineKeyboardButton("🏷️ Tags", callback_data="edit_hashtags")
             ]
         ]
-        # Only add the AI button if we haven't summarized yet or it's requested
-        if "GenZ Summary" not in content['summary'] and "no cap" not in content['summary'].lower():
+        
+        # Add AI Summary button if not already simplified by GenZ AI
+        if "no cap" not in content['summary'].lower() and "| " not in content['title']:
              keyboard.insert(1, [InlineKeyboardButton("✨ Slangify with Gen-Z AI", callback_data="gen_z_sum")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -199,25 +197,20 @@ class TelegramHandler:
                 ref_id = f"art_{i}_{int(time.time())}"
                 context.user_data['search_results'][ref_id] = art['url']
                 
-                # Escape markdown special characters in Title and Source
-                # especially '_' and '*' which are common in tech titles/URLs
                 title = art['title'].replace("*", "\\*").replace("_", "\\_").replace("[", "\\[")
                 source = art.get('source', 'Web').replace("*", "\\*").replace("_", "\\_")
-                url = art['url'] # URLs are tricky, let's keep them raw but Markdown parser might still choke
+                url = art['url']
                 
-                # Format each entry like the screenshot
                 msg_lines.append(
                     f"{i}. *{title}*\n"
                     f"📰 _{source}_\n"
                     f"🔗 {url}\n"
                 )
                 
-                # Create a selection button
                 keyboard_row.append(InlineKeyboardButton(str(i), callback_data=f"sum_{ref_id}"))
 
             msg_lines.append("Select a number to preview and publish:")
             
-            # Chunk buttons into rows of 5 if needed
             keyboard = [keyboard_row[i:i + 5] for i in range(0, len(keyboard_row), 5)]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -266,6 +259,7 @@ class TelegramHandler:
             try:
                 # Use body text for better summarizing
                 text_to_sum = content.get('body_text') or content.get('summary')
+                # Use GenZ persona by default or None (since summarizer now defaults to Alex)
                 result = summarize(text_to_sum, max_sentences=3, persona=GENZ_PERSONA)
                 parts = [p.strip() for p in result.split("|")]
                 
@@ -288,21 +282,18 @@ class TelegramHandler:
             await query.message.reply_text("🏷️ *Send new Hashtags (space separated):*", parse_mode="Markdown")
 
         elif data == "pick_another":
-            # Simple restart for now
             await self.start_command(update, context)
 
         elif data.startswith("sum_"):
             ref_id = data.replace("sum_", "")
             url = context.user_data.get('search_results', {}).get(ref_id)
             if url:
-                # When selecting from search results, let's auto-summarize with Gen-Z style
-                # but handle fallback gracefully
                 m = await query.message.reply_text("✨ *Fetching & Slangifying...*", parse_mode="Markdown")
                 try:
                     scraped = scrape_url(url)
                     body = scraped.get("body_text") or scraped.get("description") or ""
                     
-                    # Call summarizer with Gen-Z persona immediately as requested in screenshot
+                    # Auto-summarize with Gen-Z style (uses Alex by default in summarizer)
                     result = summarize(body, max_sentences=3, persona=GENZ_PERSONA)
                     parts = [p.strip() for p in result.split("|")]
                     

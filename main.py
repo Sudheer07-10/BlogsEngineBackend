@@ -143,6 +143,7 @@ class DiscoveryRequest(BaseModel):
 class DiscoveryOption(BaseModel):
     title: str
     url: str
+    source: str | None = None
     snippet: str | None = None
     full_data: dict | None = None
     summary: str | None = None
@@ -192,13 +193,15 @@ class ScheduleUpdateRequest(BaseModel):
 PLATFORM_TABLE_MAP = {
     "cp": "cp_blogs",
     "sakhi": "sakhi_blogs",
-    "jobs": "jobs_blogs"
+    "jobs": "jobs_blogs",
+    "oa": "oa_blogs"
 }
 
 PLATFORM_VERTICAL_MAP = {
     "cp": "ai",
     "sakhi": "health care",
-    "jobs": "jobs"
+    "jobs": "jobs",
+    "oa": "academy"
 }
 
 def get_target_table(platform: str) -> str:
@@ -360,10 +363,16 @@ async def publish_discovered_article(option: DiscoveryOption, platform: str = "c
     }
     
     # 3. Save to live Blog Hub
-    saved = save_link(table_name, card_data)
-    if not saved:
-        raise HTTPException(status_code=500, detail="Database persistence failed for published candidate.")
-    return saved
+    try:
+        saved = save_link(table_name, card_data)
+        if not saved:
+            raise HTTPException(status_code=500, detail="Database persistence failed for published candidate.")
+        return saved
+    except Exception as e:
+        print(f"❌ [Publish Error] {str(e)}")
+        if "relation" in str(e).lower() and table_name in str(e):
+             raise HTTPException(status_code=500, detail=f"The table '{table_name}' does not exist in Supabase. Please run the provided SQL query.")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
 @app.post("/api/links", response_model=ContentCard)
@@ -539,7 +548,7 @@ async def get_dashboard_stats(platform: str = None):
     from store import get_stats_counts
     
     # Isolation: Use only the user's platform if provided, otherwise default to all
-    tables = [get_target_table(platform)] if platform else ["cp_blogs", "sakhi_blogs", "jobs_blogs"]
+    tables = [get_target_table(platform)] if platform else ["cp_blogs", "sakhi_blogs", "jobs_blogs", "oa_blogs"]
     stats = get_stats_counts(platform_tables=tables)
     
     return [

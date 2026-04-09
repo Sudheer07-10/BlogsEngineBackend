@@ -22,6 +22,20 @@ services:
     networks:
       - pulse_network
 
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vertical_pulse_bot
+    command: python telegram_handler.py
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - pulse_network
+
 networks:
   pulse_network:
     driver: bridge
